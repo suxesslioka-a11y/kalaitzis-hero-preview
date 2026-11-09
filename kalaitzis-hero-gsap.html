@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kalaitzis · Hero Motion</title>
+  <style>body { margin: 0; background: #081525; }</style>
+</head>
+<body>
+<!-- ELEMENTOR START -->
+<style>
+  .kalaitzis-motion {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #081525;
+  }
+
+  .kalaitzis-motion .kh-trace {
+    position: absolute;
+    inset: 0;
+    --kh-edge-fade: linear-gradient(transparent 1%, #000 11%, #000 89%, transparent 99%);
+    -webkit-mask-image: var(--kh-edge-fade);
+    mask-image: var(--kh-edge-fade);
+  }
+
+  .kalaitzis-motion[data-kh-pending] .kh-trace { visibility: hidden; }
+
+  .kalaitzis-motion svg { display: block; width: 100%; height: 100%; }
+  .kalaitzis-motion .kh-stroke { fill: none; stroke-linecap: round; }
+  .kalaitzis-motion .kh-halo {
+    stroke: #1599e4;
+    stroke-width: 18;
+    opacity: .57;
+  }
+  .kalaitzis-motion .kh-line { stroke: #60c8ed; stroke-width: 2.2; opacity: .88; }
+  .kalaitzis-motion .kh-flare { stroke: #eafaff; stroke-width: 3.4; }
+</style>
+
+<!-- Μεγαλύτερο data-speed επιταχύνει τη σχεδίαση και τις λάμψεις, π.χ. 1.2 -->
+<div class="kalaitzis-motion" data-speed="1" data-kh-pending aria-hidden="true">
+  <div class="kh-trace">
+    <svg viewBox="0 0 1600 900" focusable="false">
+      <defs>
+        <clipPath id="kh-kalaitzis-exterior">
+          <path d="M941 38 C1127 38 1278 222 1278 450 S1127 862 941 862 V900 H1600 V0 H941 Z"/>
+        </clipPath>
+        <filter id="kh-kalaitzis-blur" filterUnits="userSpaceOnUse" x="0" y="0" width="1600" height="900">
+          <feGaussianBlur stdDeviation="8"/>
+        </filter>
+        <radialGradient id="kh-kalaitzis-ambient" gradientUnits="userSpaceOnUse"
+          cx="1278" cy="450" r="320">
+          <stop stop-color="#102a44"/>
+          <stop offset=".56" stop-color="#0c2035"/>
+          <stop offset="1" stop-color="#0a1828"/>
+        </radialGradient>
+        <radialGradient id="kh-kalaitzis-spill">
+          <stop stop-color="#479de2" stop-opacity=".31"/>
+          <stop offset=".34" stop-color="#378bd0" stop-opacity=".20"/>
+          <stop offset=".72" stop-color="#2879bd" stop-opacity=".07"/>
+          <stop offset="1" stop-color="#2879bd" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <!-- Το φως περιορίζεται στη δεξιά, εξωτερική πλευρά της καμπύλης. -->
+      <g clip-path="url(#kh-kalaitzis-exterior)">
+        <rect class="kh-ambient" width="1600" height="900" fill="url(#kh-kalaitzis-ambient)"/>
+        <path class="kh-stroke kh-halo" pathLength="1000" filter="url(#kh-kalaitzis-blur)"
+          d="M941 38 C1127 38 1278 222 1278 450 S1127 862 941 862"/>
+        <circle class="kh-spill" r="180" fill="url(#kh-kalaitzis-spill)" opacity="0"/>
+        <circle class="kh-spill" r="180" fill="url(#kh-kalaitzis-spill)" opacity="0"/>
+      </g>
+      <path class="kh-stroke kh-line" pathLength="1000"
+        d="M941 38 C1127 38 1278 222 1278 450 S1127 862 941 862"/>
+    </svg>
+  </div>
+</div>
+
+<noscript>
+  <style>.kalaitzis-motion[data-kh-pending] .kh-trace { visibility: visible; }</style>
+</noscript>
+
+<script>
+(() => {
+  const waitingStages = ".kalaitzis-motion[data-kh-pending]:not([data-kh-active])";
+
+  function showStill() {
+    document.querySelectorAll(waitingStages).forEach(stage => stage.removeAttribute("data-kh-pending"));
+  }
+
+  const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+  if (motionPreference.matches) {
+    showStill();
+    return;
+  }
+
+  function animate(stage, gsap) {
+    const svg = stage.querySelector("svg");
+    const arc = svg.querySelector(".kh-line");
+    const ambient = svg.querySelector(".kh-ambient");
+    const arcLayers = [svg.querySelector(".kh-halo"), arc];
+    const [leadSpill, echoSpill] = svg.querySelectorAll(".kh-spill");
+    const speed = Number(stage.dataset.speed);
+    const arcLength = Number(arc.getAttribute("pathLength"));
+    const geometryLength = arc.getTotalLength();
+    const flareLength = 24;
+    const edgeBuffer = 16;
+    const start = -edgeBuffer;
+    const exit = arcLength + flareLength + edgeBuffer;
+    const intro = { position: start };
+
+    function paintFlare(flare, position) {
+      flare.path.setAttribute("stroke-dashoffset", flareLength - position);
+
+      const visible = Math.max(0, Math.min(1, position / flareLength, (arcLength + flareLength - position) / flareLength));
+      flare.spill.setAttribute("opacity", visible * flare.strength);
+      if (!visible) return;
+
+      const center = Math.max(0, Math.min(arcLength, position - flareLength / 2));
+      const point = arc.getPointAtLength(geometryLength * center / arcLength);
+      flare.spill.setAttribute("cx", point.x);
+      flare.spill.setAttribute("cy", point.y);
+    }
+
+    function makeFlare(spill, strength) {
+      const path = arc.cloneNode(false);
+      path.setAttribute("class", "kh-stroke kh-flare");
+      path.setAttribute("opacity", strength);
+      path.setAttribute("stroke-dasharray", `${flareLength} ${2 * arcLength}`);
+      const flare = { path, spill, strength };
+      paintFlare(flare, start);
+      svg.append(path);
+      return flare;
+    }
+
+    const lead = makeFlare(leadSpill, .92);
+    const echo = makeFlare(echoSpill, .56);
+    arcLayers.forEach(path => path.setAttribute("stroke-dasharray", `${arcLength} ${arcLength}`));
+
+    function paintIntro() {
+      const revealed = Math.max(0, Math.min(arcLength, intro.position));
+      arcLayers.forEach(path => path.setAttribute("stroke-dashoffset", arcLength - revealed));
+      paintFlare(lead, intro.position);
+      ambient.setAttribute("opacity", Math.max(0, (intro.position - arcLength) / (exit - arcLength)));
+      if (revealed > 0 && stage.hasAttribute("data-kh-pending")) {
+        stage.removeAttribute("data-kh-pending");
+      }
+    }
+
+    paintIntro();
+    const timeline = gsap.timeline({ paused: true });
+    timeline
+      .to(intro, { position: arcLength, duration: 1.12, ease: "power1.inOut", onUpdate: paintIntro }, .08)
+      .to(intro, { position: exit, duration: .26, ease: "sine.out", onUpdate: paintIntro });
+
+    const loopStart = timeline.duration();
+    const passDuration = 1.9;
+    [lead, echo].forEach((flare, index) => {
+      const pass = { position: start };
+      timeline.to(pass, {
+        position: exit,
+        duration: passDuration,
+        repeat: -1,
+        ease: "none",
+        onUpdate: () => paintFlare(flare, pass.position)
+      }, loopStart + index * passDuration / 2);
+    });
+
+    timeline.timeScale(Number.isFinite(speed) && speed > 0 ? speed : 1);
+
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver(([entry]) => {
+        timeline.paused(!entry.isIntersecting);
+      });
+      observer.observe(stage);
+    } else {
+      timeline.play();
+    }
+  }
+
+  function boot(gsap) {
+    document.querySelectorAll(waitingStages).forEach(stage => {
+      stage.dataset.khActive = "";
+      animate(stage, gsap);
+    });
+  }
+
+  if (window.gsap?.timeline) {
+    boot(window.gsap);
+    return;
+  }
+
+  const existingLoader = document.querySelector("script[data-kh-gsap]");
+  if (existingLoader) {
+    if (existingLoader.dataset.khGsap === "unavailable") showStill();
+    return;
+  }
+
+  const loader = document.createElement("script");
+  loader.dataset.khGsap = "";
+  loader.src = "https://cdn.jsdelivr.net/npm/gsap@3.15.1/dist/gsap.min.js";
+  function finishLoading() {
+    if (window.gsap?.timeline) {
+      boot(window.gsap);
+      return;
+    }
+    loader.dataset.khGsap = "unavailable";
+    showStill();
+  }
+  loader.addEventListener("load", finishLoading, { once: true });
+  loader.addEventListener("error", finishLoading, { once: true });
+  document.head.append(loader);
+})();
+</script>
+<!-- ELEMENTOR END -->
+</body>
+</html>
